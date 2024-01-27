@@ -74,20 +74,6 @@ func Parse(ctx context.Context, tenant string, token []byte) (jwt.Token, error) 
 		}
 	}
 
-	var ver string
-
-	if v, ok := t.Get("ver"); ok {
-		if s, ok := v.(string); ok {
-			ver = s
-		}
-	} else {
-		return nil, fmt.Errorf("there is no `ver` field")
-	}
-
-	if ver == "" {
-		return nil, fmt.Errorf("invalid `ver` value")
-	}
-
 	jwks, err := JWKSets(ctx, tenant, policy)
 	if err != nil {
 		return nil, err
@@ -232,13 +218,19 @@ func buildOpenIDConfigurationURI(tenant, policy string) (string, error) {
 		}
 
 		u.Host = defaultAuthorityDomain
-		u.Path = "/" + tenant + openIDConfigurationURISuffix
+		u.Path = "/" + tenant
 
 	default:
 		u.Host = tenant + authorityDomainSuffix
-		u.Path = "/" + tenant + tenantSuffix + "/" + policy + openIDConfigurationURISuffix
+		u.Path = "/" + tenant + tenantSuffix
+
+		if policy != "" {
+			u.Path += "/" + policy
+		}
+
 	}
 
+	u.Path += openIDConfigurationURISuffix
 	cfguri := u.String()
 
 	if _, err := url.Parse(cfguri); err != nil {
@@ -268,6 +260,10 @@ func JWKSets(ctx context.Context, tenant, policy string) (jwk.Set, error) {
 	}
 
 	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch openid-configuration (%s): stauts=%d", cfguri, res.StatusCode)
+	}
 
 	var cfg oidc.ProviderMeatadata
 	if err := json.NewDecoder(res.Body).Decode(&cfg); err != nil {
