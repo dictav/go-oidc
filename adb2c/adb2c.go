@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/mail"
 	"net/url"
@@ -177,7 +178,9 @@ func extractAlgAndKid(token []byte) (jwa.SignatureAlgorithm, string, error) {
 	return alg, kid, nil
 }
 
-// buildOpenIDConfigurationURI builds the URI for the OpenID Configuration document.
+var cacheConfigURI sync.Map
+
+// makeAzureConfigurationURI builds the URI for the OpenID Configuration document.
 //
 // Reference: https://learn.microsoft.com/en-us/entra/identity-platform/v2-protocols-oidc#find-your-apps-openid-configuration-document-uri
 //
@@ -202,13 +205,23 @@ func extractAlgAndKid(token []byte) (jwa.SignatureAlgorithm, string, error) {
 //	https://{tenant}.b2clogin.com/{tenant}.onmicrosoft.com/{policy}/v2.0/.well-known/openid-configuration
 //
 // Therefore, this function needs to manually set the tenant and policy values.
-func buildOpenIDConfigurationURI(tenant, policy string) (string, error) {
+//
+//nolint:cyclop
+func makeAzureConfigurationURI(tenant, policy string) (string, error) {
 	if tenant == "" && policy != "" {
 		return "", fmt.Errorf("not support specifying only policy")
 	}
 
 	if tenant == "" {
 		tenant = "common"
+	}
+
+	if v, ok := cacheConfigURI.Load(tenant + policy); ok {
+		if s, ok := v.(string); ok {
+			return s, nil
+		}
+
+		slog.Warn("cache has invalid value: tenant=%s policy=%s value=%v", tenant, policy, v)
 	}
 
 	u, _ := url.Parse("https://")
@@ -235,57 +248,79 @@ func buildOpenIDConfigurationURI(tenant, policy string) (string, error) {
 	cfguri := u.String()
 
 	if _, err := url.Parse(cfguri); err != nil {
-		return "", fmt.Errorf("invalid openid-configuration url: %s", cfguri)
+		return "", fmt.Errorf("invalid url: %s", cfguri)
 	}
+
+	cacheConfigURI.Store(tenant+policy, cfguri)
 
 	return cfguri, nil
 }
 
-// JWKSets returns jwk.Set for Azure AD B2C specified by tenant and policy.
-//
-// TODO: cache jwks_uri
-//
-//nolint:ireturn
-func JWKSet(ctx context.Context, tenant, policy string) (jwk.Set, error) {
-	cfguri, err := buildOpenIDConfigurationURI(tenant, policy)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build openid configuration uri: %w", err)
+var cacheProviderMeta sync.Map
+
+func fetchProviderMetadata(ctx context.Context, cfguri string) (*oidc.ProviderMeatadata, error) {
+	if v, ok := cacheProviderMeta.Load(cfguri); ok {
+		if c, ok := v.(oidc.ProviderMeatadata); ok {
+			return &c, nil
+		}
+
+		slog.Warn("cache has invalid value: uri=%s value=%v", cfguri, v)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, cfguri, nil)
 	if err != nil {
-		return nil, fmt.Errorf("invalid openid configuration uri (%s): %w", cfguri, err)
+		return nil, fmt.Errorf("invalid uri (%s): %w", cfguri, err)
 	}
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch openid-configuration (%s): %w", cfguri, err)
+		return nil, fmt.Errorf("connect to %s: %w", cfguri, err)
 	}
 
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch openid-configuration (%s): stauts=%d", cfguri, res.StatusCode)
+		return nil, fmt.Errorf("http get %s: stauts=%d", cfguri, res.StatusCode)
 	}
 
 	var cfg oidc.ProviderMeatadata
+
 	if err := json.NewDecoder(res.Body).Decode(&cfg); err != nil {
-		return nil, fmt.Errorf("failed to decode configuration json: %w", err)
+		return nil, fmt.Errorf("decode configuration json: %w", err)
 	}
 
 	if err := cfg.Valid(); err != nil {
-		return nil, fmt.Errorf("invalid openid configuration: %w", err)
+		return nil, fmt.Errorf("invalid configuration: %w", err)
+	}
+
+	cacheProviderMeta.Store(cfguri, cfg)
+
+	return &cfg, nil
+}
+
+// JWKSet returns jwk.Set for Azure AD B2C specified by tenant and policy.
+//
+//nolint:ireturn
+func JWKSet(ctx context.Context, tenant, policy string) (jwk.Set, error) {
+	cfguri, err := makeAzureConfigurationURI(tenant, policy)
+	if err != nil {
+		return nil, fmt.Errorf("make openid configuration uri: %w", err)
+	}
+
+	cfg, err := fetchProviderMetadata(ctx, cfguri)
+	if err != nil {
+		return nil, fmt.Errorf("fetch openid provider metadata: %w", err)
 	}
 
 	if !jwkCache.IsRegistered(cfg.JWKSURI) {
 		if err := jwkCache.Register(cfg.JWKSURI); err != nil {
-			return nil, fmt.Errorf("failed to register jwks_uri: %w", err)
+			return nil, fmt.Errorf("register jwks_uri: %w", err)
 		}
 	}
 
 	set, err := jwkCache.Get(ctx, cfg.JWKSURI)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get jwk set: %w", err)
+		return nil, fmt.Errorf("get jwk set: %w", err)
 	}
 
 	return set, nil
