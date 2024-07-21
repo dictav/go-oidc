@@ -1,0 +1,30 @@
+linters:
+  enable-all: true
+  disable:
+    - depguard # use gomodguard
+    - tagliatelle
+    # not useful
+    - canonicalheader
+    - err113
+    - lll
+    - varnamelen
+    # deprecated
+    - gochecknoglobals
+    - gochecknoinits
+    - gomnd
+    - execinquery
+
+linters-settings:
+  nlreturn:
+    block-size: 3
+
+issues:
+  exclude:
+    - "fmt.Errorf can be replaced with errors.New"
+    - "var-naming: don't use underscores in Go names;"
+    - "ST1003: should not use underscores in Go names;"
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - funlen
+        - gocritic

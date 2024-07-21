@@ -10,12 +10,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dictav/go-oidc"
 	"github.com/lestrrat-go/jwx/v2/jwa"
 	"github.com/lestrrat-go/jwx/v2/jwk"
 	"github.com/lestrrat-go/jwx/v2/jws"
 	"github.com/lestrrat-go/jwx/v2/jwt"
-
-	"github.com/dictav/go-oidc"
 )
 
 const (
@@ -50,6 +49,7 @@ func SetCache(c *jwk.Cache) error {
 	return nil
 }
 
+//nolint:cyclop,ireturn
 func Parse(ctx context.Context, tenant string, token []byte) (jwt.Token, error) {
 	t, err := jwt.ParseInsecure(token)
 	if err != nil {
@@ -114,7 +114,7 @@ func Email(t jwt.Token) (string, error) {
 			return "", err
 		}
 
-		return v.(string), nil
+		return v.(string), nil //nolint:forcetypeassert
 	}
 
 	emails, err := Emails(t)
@@ -131,6 +131,7 @@ func Email(t jwt.Token) (string, error) {
 
 func Emails(t jwt.Token) ([]string, error) {
 	var emails []string
+
 	v, ok := t.Get("emails")
 	if !ok {
 		return nil, fmt.Errorf("no emails value")
@@ -142,12 +143,13 @@ func Emails(t jwt.Token) ([]string, error) {
 	}
 
 	emails = make([]string, len(arr))
+
 	for i, vv := range arr {
 		if err := validateEmailValue(vv); err != nil {
 			return nil, err
 		}
 
-		emails[i] = vv.(string)
+		emails[i] = vv.(string) //nolint:forcetypeassert
 	}
 
 	return emails, nil
@@ -202,7 +204,7 @@ func extractAlgAndKid(token []byte) (jwa.SignatureAlgorithm, string, error) {
 // Therefore, this function needs to manually set the tenant and policy values.
 func buildOpenIDConfigurationURI(tenant, policy string) (string, error) {
 	if tenant == "" && policy != "" {
-		return "", fmt.Errorf("not support specifing only policy")
+		return "", fmt.Errorf("not support specifying only policy")
 	}
 
 	if tenant == "" {
@@ -214,7 +216,7 @@ func buildOpenIDConfigurationURI(tenant, policy string) (string, error) {
 	switch tenant {
 	case "common", "organizations", "consumers":
 		if policy != "" {
-			return "", fmt.Errorf("not support specifing policy for %q", tenant)
+			return "", fmt.Errorf("not support specifying policy for %q", tenant)
 		}
 
 		u.Host = defaultAuthorityDomain
@@ -227,7 +229,6 @@ func buildOpenIDConfigurationURI(tenant, policy string) (string, error) {
 		if policy != "" {
 			u.Path += "/" + policy
 		}
-
 	}
 
 	u.Path += openIDConfigurationURISuffix
@@ -243,7 +244,9 @@ func buildOpenIDConfigurationURI(tenant, policy string) (string, error) {
 // JWKSets returns jwk.Set for Azure AD B2C specified by tenant and policy.
 //
 // TODO: cache jwks_uri
-func JWKSets(ctx context.Context, tenant, policy string) (jwk.Set, error) {
+//
+//nolint:ireturn
+func JWKSet(ctx context.Context, tenant, policy string) (jwk.Set, error) {
 	cfguri, err := buildOpenIDConfigurationURI(tenant, policy)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build openid configuration uri: %w", err)
@@ -275,8 +278,22 @@ func JWKSets(ctx context.Context, tenant, policy string) (jwk.Set, error) {
 	}
 
 	if !jwkCache.IsRegistered(cfg.JWKSURI) {
-		jwkCache.Register(cfg.JWKSURI)
+		if err := jwkCache.Register(cfg.JWKSURI); err != nil {
+			return nil, fmt.Errorf("failed to register jwks_uri: %w", err)
+		}
 	}
 
-	return jwkCache.Get(ctx, cfg.JWKSURI)
+	set, err := jwkCache.Get(ctx, cfg.JWKSURI)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get jwk set: %w", err)
+	}
+
+	return set, nil
+}
+
+// Deprecated: Use JWKSet instead.
+//
+//nolint:ireturn
+func JWKSets(ctx context.Context, tenant, policy string) (jwk.Set, error) {
+	return JWKSet(ctx, tenant, policy)
 }
