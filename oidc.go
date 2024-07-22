@@ -27,10 +27,17 @@ func init() {
 }
 
 type parseOption struct {
+	aud         string
 	adb2cTenant string
 }
 
 type ParseOption func(*parseOption)
+
+func WithAudience(aud string) ParseOption {
+	return func(opt *parseOption) {
+		opt.aud = aud
+	}
+}
 
 func WithAzureADB2CTenant(tenant string) ParseOption {
 	return func(o *parseOption) {
@@ -39,24 +46,35 @@ func WithAzureADB2CTenant(tenant string) ParseOption {
 }
 
 func Parse(ctx context.Context, token []byte, opts ...ParseOption) (jwt.Token, error) {
-	t, err := jwt.ParseInsecure(token)
-	if err != nil {
-		return nil, fmt.Errorf("invalid token: %w", err)
-	}
-
-	var (
-		opt    parseOption
-		cfguri string
-		iss    = t.Issuer()
-	)
+	var opt parseOption
 
 	for _, f := range opts {
 		f(&opt)
 	}
 
+	t, err := jwt.ParseInsecure(token)
+	if err != nil {
+		return nil, fmt.Errorf("invalid token: %w", err)
+	}
+
+	if opt.aud != "" {
+		if !checkAudience(t.Audience(), opt.aud) {
+			return nil, fmt.Errorf("invalid audience: %s", opt.aud)
+		}
+	} else {
+		slog.Warn("strongly recommend checking the Audience using WithAudience option")
+	}
+
+	var (
+		cfguri string
+		iss    = t.Issuer()
+	)
+
 	switch {
 	case iss == appleIssuer:
 		cfguri = appleConfigurationURI
+	case iss == googleIssuer:
+		cfguri = googleConfigurationURI
 	case adb2cIssuerRegex.MatchString(iss):
 		cfguri, err = makeADB2CConfigurationURI(opt.adb2cTenant, t)
 		if err != nil {
@@ -123,10 +141,12 @@ func Email(t jwt.Token) (string, error) {
 	switch {
 	case iss == appleIssuer:
 		return email(t, appleEmailKey)
+	case iss == googleIssuer:
+		return email(t, googleEmailKey)
 	case adb2cIssuerRegex.MatchString(iss):
 		return adb2cEmail(t)
 	default:
-		return "", fmt.Errorf("not supported issuer: %s", iss)
+		return "", fmt.Errorf("email not supported for %s", iss)
 	}
 }
 
@@ -222,4 +242,14 @@ func fetchProviderMetadata(ctx context.Context, cfguri string) (*ProviderMetadat
 
 func configURI() string {
 	return "https://appleid.apple.com/auth/keys"
+}
+
+func checkAudience(list []string, aud string) bool {
+	for _, v := range list {
+		if v == aud {
+			return true
+		}
+	}
+
+	return false
 }

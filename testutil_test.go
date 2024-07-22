@@ -6,6 +6,7 @@ import (
 
 var (
 	Export_appleCoinfigurationURI    = appleConfigurationURI
+	Export_googleCoinfigurationURI   = googleConfigurationURI
 	Export_makeADB2CConfigurationURI = makeADB2CConfigurationURI
 )
 
