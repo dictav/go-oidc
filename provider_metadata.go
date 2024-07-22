@@ -16,7 +16,7 @@ import (
 // licensed under the Apache License, Version 2.0.
 //
 // see https://openid.net/specs/openid-connect-discovery-1_0.html
-type ProviderMeatadata struct {
+type ProviderMetadata struct {
 	// REQUIRED. URL using the https scheme with no query or fragment components that the OP asserts as its Issuer Identifier. If Issuer discovery is supported (see Section 2), this value MUST be identical to the issuer value returned by WebFinger. This also MUST be identical to the iss Claim value in ID Tokens issued from this Issuer.
 	Issuer string `json:"issuer"`
 
@@ -123,7 +123,7 @@ type ProviderMeatadata struct {
 	OPTermsOfServiceURI string `json:"op_tos_uri,omitempty"`
 }
 
-func (c ProviderMeatadata) Valid() error {
+func (c ProviderMetadata) Valid() error {
 	var err error
 
 	if c.Issuer == "" {
