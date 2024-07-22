@@ -1,5 +1,3 @@
-all: lint test
-
 lint:
 	golangci-lint run
 
