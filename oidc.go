@@ -45,6 +45,7 @@ func WithAzureADB2CTenant(tenant string) ParseOption {
 	}
 }
 
+//nolint:cyclop,funlen,ireturn
 func Parse(ctx context.Context, token []byte, opts ...ParseOption) (jwt.Token, error) {
 	var opt parseOption
 
@@ -115,6 +116,7 @@ func Parse(ctx context.Context, token []byte, opts ...ParseOption) (jwt.Token, e
 	return t, nil
 }
 
+//nolint:ireturn
 func JWKSet(ctx context.Context, cfguri string) (jwk.Set, error) {
 	cfg, err := fetchProviderMetadata(ctx, cfguri)
 	if err != nil {
@@ -238,10 +240,6 @@ func fetchProviderMetadata(ctx context.Context, cfguri string) (*ProviderMetadat
 	cacheProviderMeta.Store(cfguri, cfg)
 
 	return &cfg, nil
-}
-
-func configURI() string {
-	return "https://appleid.apple.com/auth/keys"
 }
 
 func checkAudience(list []string, aud string) bool {

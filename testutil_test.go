@@ -1,4 +1,4 @@
-package oidc
+package oidc //nolint:testpackage
 
 import (
 	"log"
@@ -17,7 +17,7 @@ func CheckCache(cfguri string) bool {
 		return false
 	}
 
-	cfg := v.(ProviderMetadata)
+	cfg := v.(ProviderMetadata) //nolint:forcetypeassert
 
 	return jwkCache.IsRegistered(cfg.JWKSURI)
 }
