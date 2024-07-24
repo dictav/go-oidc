@@ -20,10 +20,59 @@ const (
 	expirationMargin = 60 * time.Second
 )
 
-var jwkCache *jwk.Cache
+var (
+	jwkCache      *jwk.Cache
+	validAudience func(audiences []string) bool
+	muxAud        sync.RWMutex
+)
 
 func init() {
 	jwkCache = jwk.NewCache(context.Background())
+}
+
+func SetValidAudience(f func(audiences []string) bool) {
+	muxAud.Lock()
+	validAudience = f
+	muxAud.Unlock()
+}
+
+func validateAudience(audiences []string, aud string) error {
+	if aud == "" && validAudience == nil {
+		slog.Warn("strongly recommend checking the Audience using SetValidAudience or WithAudience option")
+		return nil
+	}
+
+	if aud != "" {
+		if !cotainsAudience(audiences, aud) {
+			return fmt.Errorf("invalid audience (option): want=%s, got=%s", aud, audiences)
+		}
+
+		return nil
+	}
+
+	var ok bool
+
+	muxAud.RLock()
+	if validAudience != nil {
+		ok = validAudience(audiences)
+	}
+	muxAud.RUnlock()
+
+	if !ok {
+		return fmt.Errorf("invalid audience (func): got=%v", audiences)
+	}
+
+	return nil
+}
+
+func cotainsAudience(list []string, aud string) bool {
+	for _, v := range list {
+		if v == aud {
+			return true
+		}
+	}
+
+	return false
 }
 
 type parseOption struct {
@@ -58,12 +107,8 @@ func Parse(ctx context.Context, token []byte, opts ...ParseOption) (jwt.Token, e
 		return nil, fmt.Errorf("invalid token: %w", err)
 	}
 
-	if opt.aud != "" {
-		if !checkAudience(t.Audience(), opt.aud) {
-			return nil, fmt.Errorf("invalid audience: %s", opt.aud)
-		}
-	} else {
-		slog.Warn("strongly recommend checking the Audience using WithAudience option")
+	if err := validateAudience(t.Audience(), opt.aud); err != nil {
+		return nil, err
 	}
 
 	var (
@@ -240,14 +285,4 @@ func fetchProviderMetadata(ctx context.Context, cfguri string) (*ProviderMetadat
 	cacheProviderMeta.Store(cfguri, cfg)
 
 	return &cfg, nil
-}
-
-func checkAudience(list []string, aud string) bool {
-	for _, v := range list {
-		if v == aud {
-			return true
-		}
-	}
-
-	return false
 }

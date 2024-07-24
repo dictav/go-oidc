@@ -8,7 +8,102 @@ import (
 
 	"github.com/dictav/go-oidc"
 	"github.com/lestrrat-go/jwx/v2/jwk"
+	"github.com/lestrrat-go/jwx/v2/jwt"
 )
+
+//nolint:cyclop,gocognit,paralleltest
+func TestValidateAudience(t *testing.T) {
+	// usage: validateAudience(token.Audience(), parseOption.aud)
+	token := jwt.New()
+	if err := token.Set(jwt.AudienceKey, []string{
+		"https://example.com",
+		"https://accounts.example.com",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	audiences := token.Audience()
+
+	t.Log("audiences:", audiences)
+
+	t.Run("no validation", func(t *testing.T) {
+		oidc.SetValidAudience(nil)
+
+		if err := oidc.Export_validateAudience(nil, ""); err != nil {
+			t.Errorf("should not return error")
+		}
+
+		if err := oidc.Export_validateAudience(audiences, ""); err != nil {
+			t.Errorf("should not return error")
+		}
+	})
+
+	t.Run("WithAudience Option", func(t *testing.T) {
+		if err := oidc.Export_validateAudience(audiences, "https://example.com"); err != nil {
+			t.Errorf("should not return error: err=%s", err)
+		}
+
+		if err := oidc.Export_validateAudience(audiences, "https://accounts.example.com"); err != nil {
+			t.Errorf("should not return error: err=%s", err)
+		}
+
+		if err := oidc.Export_validateAudience(audiences, "https://akuma.example.com"); err == nil {
+			t.Errorf("should return error")
+		}
+
+		if err := oidc.Export_validateAudience(nil, "https://example.com"); err == nil {
+			t.Errorf("should return error")
+		}
+	})
+
+	t.Run("SetValidAudience", func(t *testing.T) {
+		defer oidc.SetValidAudience(nil)
+
+		t.Run("allow accounts.example.com", func(t *testing.T) {
+			oidc.SetValidAudience(func(audiences []string) bool {
+				for _, aud := range audiences {
+					switch aud {
+					case "https://accounts.example.com":
+						return true
+					}
+				}
+
+				return false
+			})
+
+			if err := oidc.Export_validateAudience(audiences, ""); err != nil {
+				t.Errorf("should not return error: err=%s", err)
+			}
+		})
+
+		t.Run("allow akuma.example.com", func(t *testing.T) {
+			oidc.SetValidAudience(func(audiences []string) bool {
+				for _, aud := range audiences {
+					switch aud {
+					case "https://akuma.example.com":
+						return true
+					}
+				}
+
+				return false
+			})
+
+			if err := oidc.Export_validateAudience(audiences, ""); err == nil {
+				t.Errorf("should return error")
+			}
+		})
+
+		t.Run("always true", func(t *testing.T) {
+			oidc.SetValidAudience(func(_ []string) bool {
+				return false
+			})
+
+			if err := oidc.Export_validateAudience(nil, ""); err == nil {
+				t.Errorf("should not return error")
+			}
+		})
+	})
+}
 
 func testJWKSet(t *testing.T, cfguri string) {
 	t.Helper()
