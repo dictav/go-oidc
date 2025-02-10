@@ -110,13 +110,18 @@ func testJWKSet(t *testing.T, cfguri string) {
 
 	ctx := context.Background()
 
-	set, err := oidc.JWKSet(ctx, cfguri)
+	cfg, err := oidc.Export_fetchProviderMetadata(ctx, cfguri)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	set, err := oidc.Export_jwkSet(ctx, cfg.JWKSURI)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if !oidc.CheckCache(cfguri) {
-		t.Errorf("should be registered: %s", cfguri)
+		t.Errorf("should be registered: %s", cfg.JWKSURI)
 	}
 
 	t.Logf("there is %d keys", set.Len())

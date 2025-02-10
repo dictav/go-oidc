@@ -28,5 +28,5 @@ func TestParse_ADB2C(t *testing.T) {
 		t.Log("NO SET ADB2C_TENANT")
 	}
 
-	testParse(t, "ADB2C_ID_TOKEN", oidc.WithAzureADB2CTenant(tenant))
+	testParse(t, "ADB2C_ID_TOKEN")
 }

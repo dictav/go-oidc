@@ -9,7 +9,13 @@ The technology described in this specification was made available from contribut
 package oidc
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"sync"
 )
 
 // This code is based on the OpenID Connect 1.0 specification, which is
@@ -165,4 +171,46 @@ func (c ProviderMetadata) Valid() error {
 	// RECOMMENDED: ClaimsSupported
 
 	return err
+}
+
+var cacheProviderMeta sync.Map
+
+func fetchProviderMetadata(ctx context.Context, cfguri string) (*ProviderMetadata, error) {
+	if v, ok := cacheProviderMeta.Load(cfguri); ok {
+		if c, ok := v.(ProviderMetadata); ok {
+			return &c, nil
+		}
+
+		slog.Warn("cache has invalid value: uri=%s value=%v", cfguri, v)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, cfguri, nil)
+	if err != nil {
+		return nil, fmt.Errorf("invalid uri (%s): %w", cfguri, err)
+	}
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("connect to %s: %w", cfguri, err)
+	}
+
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("http get %s: stauts=%d", cfguri, res.StatusCode)
+	}
+
+	var cfg ProviderMetadata
+
+	if err := json.NewDecoder(res.Body).Decode(&cfg); err != nil {
+		return nil, fmt.Errorf("decode configuration json: %w", err)
+	}
+
+	if err := cfg.Valid(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
+	}
+
+	cacheProviderMeta.Store(cfguri, cfg)
+
+	return &cfg, nil
 }

@@ -6,6 +6,8 @@ import (
 
 var (
 	Export_validateAudience          = validateAudience
+	Export_jwkSet                    = jwkSet
+	Export_fetchProviderMetadata     = fetchProviderMetadata
 	Export_appleCoinfigurationURI    = appleConfigurationURI
 	Export_googleCoinfigurationURI   = googleConfigurationURI
 	Export_makeADB2CConfigurationURI = makeADB2CConfigurationURI
