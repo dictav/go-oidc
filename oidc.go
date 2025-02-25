@@ -21,13 +21,16 @@ const (
 )
 
 var (
-	jwkCache      *jwk.Cache
-	validAudience func(audiences []string) bool
-	muxAud        sync.RWMutex
+	jwkCache          *jwk.Cache
+	cacheProviderMeta map[string]*ProviderMetadata
+	validAudience     func(audiences []string) bool
+	muxAud            sync.RWMutex
+	muxPM             sync.RWMutex
 )
 
 func init() {
 	jwkCache = jwk.NewCache(context.Background())
+	cacheProviderMeta = make(map[string]*ProviderMetadata)
 }
 
 func SetValidAudience(f func(audiences []string) bool) {
@@ -245,16 +248,17 @@ func extractAlgAndKid(token []byte) (jwa.SignatureAlgorithm, string, error) {
 	return alg, kid, nil
 }
 
-var cacheProviderMeta sync.Map
-
 func fetchProviderMetadata(ctx context.Context, cfguri string) (*ProviderMetadata, error) {
-	if v, ok := cacheProviderMeta.Load(cfguri); ok {
-		if c, ok := v.(ProviderMetadata); ok {
-			return &c, nil
-		}
+	muxPM.RLock()
+	cache, ok := cacheProviderMeta[cfguri]
+	muxPM.RUnlock()
 
-		slog.Warn("cache has invalid value: uri=%s value=%v", cfguri, v)
+	if ok {
+		return cache, nil
 	}
+
+	muxPM.Lock()
+	defer muxPM.Unlock()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, cfguri, nil)
 	if err != nil {
@@ -282,7 +286,7 @@ func fetchProviderMetadata(ctx context.Context, cfguri string) (*ProviderMetadat
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	cacheProviderMeta.Store(cfguri, cfg)
+	cacheProviderMeta[cfguri] = &cfg
 
 	return &cfg, nil
 }

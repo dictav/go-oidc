@@ -12,13 +12,14 @@ var (
 )
 
 func CheckCache(cfguri string) bool {
-	v, ok := cacheProviderMeta.Load(cfguri)
+	muxPM.RLock()
+	defer muxPM.RUnlock()
+
+	cfg, ok := cacheProviderMeta[cfguri]
 	if !ok {
 		log.Printf("cacheProviderMeta: %s not found in cache", cfguri)
 		return false
 	}
-
-	cfg := v.(ProviderMetadata) //nolint:forcetypeassert
 
 	return jwkCache.IsRegistered(cfg.JWKSURI)
 }
